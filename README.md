@@ -2,9 +2,9 @@
 
 A web app where friends build habits together. Users track daily habits, keep their streaks alive, see their squad's check-ins live, react to them and nudge friends who are slipping. Friends can also join challenges with optional money pledges (test mode only).
 
-This repo is the **Django REST API**. The web app lives in [habit-tracker-frontend](https://github.com/iamsamikshya-git/habit-tracker-frontend).
+This repo is the **Django REST API**. The web app lives in [habit-tracker-frontend](https://github.com/Avinto-Foundation/habit-tracker-frontend).
 
-> **Status:** 🚧 Sprint 0 (planning & design). Project setup starts in Sprint 1 (11 Nov 2026). Sections marked *(planned)* will be confirmed once the setup PR is merged.
+> **Status:** 🚧 Sprint 1 (setup & authentication). Sections marked *(planned)* are not built yet.
 
 AMPW Capstone Project · 28 Oct 2026 to 4 Jan 2027 · Student: Samikshya Adhikari · Supervisor: Prayusha Giri
 
@@ -30,7 +30,7 @@ AMPW Capstone Project · 28 Oct 2026 to 4 Jan 2027 · Student: Samikshya Adhikar
 | Auth | JWT (`djangorestframework-simplejwt`), Google ID token verification (`google-auth`) |
 | API docs | Swagger / OpenAPI (`drf-spectacular`) |
 | CORS | `django-cors-headers` |
-| Config | `python-dotenv` *(planned)* |
+| Config | `python-dotenv` |
 | Real-time | Django Channels *(planned, Sprint 3)* |
 | Testing | [pytest](https://pytest.org) + `pytest-django` |
 
@@ -40,11 +40,11 @@ AMPW Capstone Project · 28 Oct 2026 to 4 Jan 2027 · Student: Samikshya Adhikar
 - PostgreSQL **15 or newer** running locally (check with `psql --version`)
 - Git
 
-## Getting started *(planned)*
+## Getting started
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/iamsamikshya-git/habit-tracker-backend.git
+git clone https://github.com/Avinto-Foundation/habit-tracker-backend.git
 cd habit-tracker-backend
 
 # 2. Create and activate a virtual environment
@@ -71,7 +71,7 @@ python manage.py runserver
 
 | URL | What |
 |---|---|
-| http://localhost:8000/api/ | API root |
+| http://localhost:8000/api/health/ | Health check (no login needed) |
 | http://localhost:8000/api/docs/ | **Swagger UI** (interactive API docs) |
 | http://localhost:8000/api/schema/ | OpenAPI schema (YAML) |
 | http://localhost:8000/admin/ | Django admin |
@@ -120,7 +120,7 @@ pytest -v              # verbose
 pytest --cov           # with coverage (needs pytest-cov)
 ```
 
-## Project structure *(planned)*
+## Project structure
 
 ```
 habit-tracker-backend/
@@ -147,5 +147,5 @@ habit-tracker-backend/
 
 ## Related
 
-- Frontend repo: https://github.com/iamsamikshya-git/habit-tracker-frontend
+- Frontend repo: https://github.com/Avinto-Foundation/habit-tracker-frontend
 - Project board: *link coming soon*

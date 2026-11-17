@@ -1,0 +1,151 @@
+"""
+Django settings for the Social Habit Tracker API.
+
+Secrets and machine-specific values are read from a `.env` file in the
+project root (see `.env.example`). Never commit `.env`.
+"""
+
+import os
+from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
+
+
+def env(name: str, default: str | None = None) -> str:
+    """Read an environment variable, failing loudly if it is required and missing."""
+    value = os.environ.get(name, default)
+    if value is None:
+        raise ImproperlyConfigured(f"Missing environment variable: {name} (see .env.example)")
+    return value
+
+
+def env_list(name: str, default: str = "") -> list[str]:
+    """Read a comma-separated environment variable as a list."""
+    return [item.strip() for item in env(name, default).split(",") if item.strip()]
+
+
+# --- Core -------------------------------------------------------------------
+
+SECRET_KEY = env("SECRET_KEY")
+DEBUG = env("DEBUG", "False").lower() == "true"
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
+
+
+# --- Apps -------------------------------------------------------------------
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    # Third party
+    "rest_framework",
+    "corsheaders",
+    "drf_spectacular",
+    # Local
+    "accounts",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "config.wsgi.application"
+
+
+# --- Database (PostgreSQL) --------------------------------------------------
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("DB_NAME", "habit_tracker"),
+        "USER": env("DB_USER", "postgres"),
+        "PASSWORD": env("DB_PASSWORD"),
+        "HOST": env("DB_HOST", "localhost"),
+        "PORT": env("DB_PORT", "5432"),
+    }
+}
+
+
+# --- Auth -------------------------------------------------------------------
+
+# Custom user model. Set before the first migration so we can change it later
+# (adding fields like time zone or avatar) without rebuilding the database.
+AUTH_USER_MODEL = "accounts.User"
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+
+# --- Django REST Framework --------------------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+
+# --- API docs (Swagger / OpenAPI) -------------------------------------------
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Social Habit Tracker API",
+    "DESCRIPTION": "REST API for the Social Habit Tracker (AMPW Capstone).",
+    "VERSION": "0.1.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
+
+
+# --- CORS (lets the React app call the API) ----------------------------------
+
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+
+
+# --- Internationalisation ---------------------------------------------------
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"  # Store everything in UTC; convert to the user's zone for streaks.
+USE_I18N = True
+USE_TZ = True
+
+
+# --- Static files -----------------------------------------------------------
+
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
