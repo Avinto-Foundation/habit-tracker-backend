@@ -127,6 +127,8 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Limits for endpoints that could be abused (used with `throttle_scope` on a view).
+    "DEFAULT_THROTTLE_RATES": {"password_reset": "5/hour"},
 }
 
 
@@ -143,6 +145,26 @@ SIMPLE_JWT = {
 }
 # How long a refresh token lasts when the user ticks "Remember me".
 REMEMBER_ME_REFRESH_LIFETIME = timedelta(days=7)
+
+
+# --- Password reset & email -------------------------------------------------
+
+# Where the React app lives, for links in emails (e.g. the reset-password page).
+FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+
+# Reset links stop working after 1 hour (Django's default is 3 days).
+PASSWORD_RESET_TIMEOUT = 60 * 60
+
+# By default emails are printed in the runserver terminal instead of being sent.
+# To really send them, set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+# and the EMAIL_HOST_* values in .env (see .env.example).
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(env("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = env("EMAIL_USE_TLS", "True").lower() == "true"
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "HabitSquad <no-reply@habitsquad.local>")
 
 
 # --- Google sign-in ---------------------------------------------------------

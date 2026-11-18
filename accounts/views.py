@@ -8,6 +8,7 @@ from drf_spectacular.utils import (
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 from .serializers import (
@@ -15,6 +16,8 @@ from .serializers import (
     LoginSerializer,
     LogoutSerializer,
     MeSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     RefreshSerializer,
     RegisterSerializer,
 )
@@ -338,3 +341,98 @@ class MeView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+
+
+# --- Password reset ------------------------------------------------------------
+
+RESET_REQUESTED = (
+    "If an account with that email exists, we've sent a link to reset the password. "
+    "Check your inbox (and spam folder)."
+)
+PASSWORD_CHANGED = "Your password has been changed. Please log in with your new password."
+
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    """POST /api/auth/password-reset/: email a one-time reset link."""
+
+    serializer_class = PasswordResetRequestSerializer
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    # At most 5 requests per hour from one address, so nobody can flood inboxes.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
+
+    @extend_schema(
+        summary="Ask for a password reset link",
+        description=(
+            "Emails a link to `<FRONTEND_URL>/reset-password?uid=…&token=…`. The link works "
+            "once and expires after 1 hour.\n\n"
+            "The answer is **always the same**, whether or not the email has an account, so "
+            "this can't be used to find out who is registered. Limited to 5 requests per hour."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample("Request", request_only=True, value={"email": "sam@example.com"}),
+            OpenApiExample(
+                "Sent", response_only=True, status_codes=["200"], value={"detail": RESET_REQUESTED}
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT, description="Always this answer."),
+            400: error_response("The email is missing or invalid.", {"email": ["Enter a valid email address."]}),
+            429: error_response(
+                "Too many requests.",
+                {"detail": "Request was throttled. Expected available in 3600 seconds."},
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": RESET_REQUESTED}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    """POST /api/auth/password-reset/confirm/: choose a new password with the link."""
+
+    serializer_class = PasswordResetConfirmSerializer
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(
+        summary="Set a new password",
+        description=(
+            "Send the `uid` and `token` from the reset link with the new password (same rules "
+            "as sign-up). On success the user is **logged out on every device** and must log "
+            "in with the new password."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample(
+                "New password",
+                request_only=True,
+                value={
+                    "uid": "MQ",
+                    "token": "cd1x5b-0c8f2e6f1b2a3c4d5e6f7a8b9c0d1e2f",
+                    "new_password": "my-New-pass-2",
+                    "new_password_confirm": "my-New-pass-2",
+                },
+            ),
+            OpenApiExample(
+                "Changed", response_only=True, status_codes=["200"], value={"detail": PASSWORD_CHANGED}
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT, description="Password changed."),
+            400: error_response(
+                "Invalid/expired link, or the new password breaks a rule.",
+                {"token": [PasswordResetConfirmSerializer.INVALID_LINK]},
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": PASSWORD_CHANGED}, status=status.HTTP_200_OK)
