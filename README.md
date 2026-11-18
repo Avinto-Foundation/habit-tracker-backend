@@ -92,8 +92,14 @@ Create a `.env` file in the project root. Never commit `.env`; only commit `.env
 | `DB_PORT` | Database port | `5432` |
 | `CORS_ALLOWED_ORIGINS` | Frontend URL(s) allowed to call the API | `http://localhost:5173` |
 | `GOOGLE_CLIENT_ID` | OAuth Client ID from Google Cloud Console (same as frontend) | `1234-abc.apps.googleusercontent.com` |
+| `FRONTEND_URL` | Frontend address, used for links in emails | `http://localhost:5173` |
+| `EMAIL_BACKEND` | *(optional)* How emails are sent. Default prints them in the runserver terminal | `django.core.mail.backends.smtp.EmailBackend` |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | *(optional)* SMTP login, e.g. a Gmail address + App Password | `you@gmail.com` |
+| `DEFAULT_FROM_EMAIL` | *(optional)* Sender shown on emails | `HabitSquad <you@gmail.com>` |
 
-More variables (email, Stripe, eSewa) will be added in later sprints.
+More variables (Stripe, eSewa) will be added in later sprints.
+
+**Emails in development:** by default nothing is really sent; emails (like password reset links) are printed in the terminal where `python manage.py runserver` is running. See `.env.example` to send real emails with Gmail.
 
 ## API documentation
 
@@ -110,6 +116,8 @@ Every endpoint is documented with Swagger/OpenAPI, including request body, respo
 | POST | `/api/auth/google/` | Sign in / sign up with a Google ID token (201 if a new account was made, 200 if it already existed) |
 | GET | `/api/auth/me/` | Get the logged-in user (needs an access token) |
 | PATCH | `/api/auth/me/` | Update your own full name, username or time zone |
+| POST | `/api/auth/password-reset/` | Email a one-time reset link (same answer whether or not the email exists; 5 per hour) |
+| POST | `/api/auth/password-reset/confirm/` | Set a new password with the link's `uid` + `token`; logs out everywhere |
 
 **Using tokens:** send the access token on every request as `Authorization: Bearer <access>`. Access tokens last 15 minutes; refresh tokens last 1 day (7 days with `remember_me`). Each refresh returns a new refresh token and blocks the old one. In Swagger, click **Authorize** and paste an access token.
 

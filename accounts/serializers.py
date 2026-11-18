@@ -8,7 +8,7 @@ from rest_framework import exceptions, serializers, status
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from . import google
+from . import google, password_reset
 from .models import validate_timezone
 from .tokens import RememberMeRefreshToken, refresh_token_for
 
@@ -269,3 +269,52 @@ class MeSerializer(serializers.ModelSerializer):
     def validate_username(self, value: str) -> str:
         # Keeping your own username (even with different capitals) is fine.
         return check_username_free(value, current_user=self.instance)
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Asks for a reset link. Never reveals whether the email has an account."""
+
+    email = serializers.EmailField()
+
+    def save(self) -> None:
+        email = self.validated_data["email"].strip().lower()
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if user is not None:
+            password_reset.send_reset_email(user)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Sets a new password using the uid + token from the reset link."""
+
+    INVALID_LINK = "This reset link is invalid or has expired. Please ask for a new one."
+
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(
+        trim_whitespace=False, style={"input_type": "password"}
+    )
+    new_password_confirm = serializers.CharField(
+        trim_whitespace=False, style={"input_type": "password"}
+    )
+
+    def validate(self, attrs: dict) -> dict:
+        user = password_reset.user_from_link(attrs["uid"], attrs["token"])
+        if user is None:
+            raise serializers.ValidationError({"token": self.INVALID_LINK})
+
+        if attrs["new_password"] != attrs["new_password_confirm"]:
+            raise serializers.ValidationError({"new_password_confirm": "Passwords don't match."})
+
+        try:
+            validate_password(attrs["new_password"], user=user)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError({"new_password": list(error.messages)})
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self) -> None:
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        password_reset.log_out_everywhere(user)
