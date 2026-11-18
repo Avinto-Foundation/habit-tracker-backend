@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 from .serializers import (
+    GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
     RefreshSerializer,
@@ -215,3 +216,61 @@ class LogoutView(PublicTokenView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(status=status.HTTP_205_RESET_CONTENT)
+
+
+# --- Google sign-in ----------------------------------------------------------
+
+
+class GoogleLoginView(PublicTokenView):
+    """POST /api/auth/google/: sign up or log in with a Google account."""
+
+    serializer_class = GoogleLoginSerializer
+
+    @extend_schema(
+        summary="Continue with Google",
+        description=(
+            "Send the ID token (the `credential`) the frontend got from Google's sign-in "
+            "button. The backend checks it with Google, then:\n\n"
+            "- **email already has an account** → logs in to that account (**200**)\n"
+            "- **new email** → creates an account (**201**) with the name from Google and a "
+            "username made from the email (e.g. `john_doe`). It has no password.\n\n"
+            "Returns the same tokens as normal login, plus `created`."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample(
+                "Google sign-in",
+                request_only=True,
+                value={"id_token": TOKEN_EXAMPLE, "remember_me": True, "timezone": "Asia/Kathmandu"},
+            ),
+            OpenApiExample(
+                "New account",
+                response_only=True,
+                status_codes=["201"],
+                value={
+                    "access": TOKEN_EXAMPLE,
+                    "refresh": TOKEN_EXAMPLE,
+                    "user": USER_EXAMPLE,
+                    "created": True,
+                },
+            ),
+        ],
+        responses={
+            200: GoogleLoginSerializer,
+            201: GoogleLoginSerializer,
+            400: error_response("`id_token` is missing.", {"id_token": ["This field is required."]}),
+            401: error_response(
+                "The Google token is fake, expired, for another app, or the email isn't verified.",
+                {"detail": "Google sign-in failed. Please try again."},
+            ),
+            503: error_response(
+                "Google sign-in isn't set up on the server, or Google can't be reached.",
+                {"detail": "Google sign-in is not available right now. Please use email and password."},
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        return Response(data, status=status.HTTP_201_CREATED if data["created"] else status.HTTP_200_OK)
