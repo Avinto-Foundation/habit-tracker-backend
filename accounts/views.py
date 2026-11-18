@@ -14,6 +14,7 @@ from .serializers import (
     GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
+    MeSerializer,
     RefreshSerializer,
     RegisterSerializer,
 )
@@ -274,3 +275,66 @@ class GoogleLoginView(PublicTokenView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         return Response(data, status=status.HTTP_201_CREATED if data["created"] else status.HTTP_200_OK)
+
+
+# --- Current user ------------------------------------------------------------
+
+NOT_LOGGED_IN = error_response(
+    "No valid access token was sent.",
+    {"detail": "Authentication credentials were not provided."},
+)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        summary="Get the logged-in user",
+        description=(
+            "Returns your own details. Needs `Authorization: Bearer <access token>` "
+            "(in Swagger: log in, then click **Authorize** and paste the access token)."
+        ),
+        tags=["auth"],
+        responses={200: MeSerializer, 401: NOT_LOGGED_IN},
+    ),
+    patch=extend_schema(
+        summary="Update the logged-in user",
+        description=(
+            "Change your `full_name`, `username` and/or `timezone`. Send only the fields you "
+            "want to change. Same rules as sign-up. `email` and `id` can't be changed here."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample(
+                "Set time zone",
+                request_only=True,
+                value={"timezone": "Asia/Kathmandu"},
+            ),
+            OpenApiExample(
+                "Updated",
+                response_only=True,
+                status_codes=["200"],
+                value=USER_EXAMPLE,
+            ),
+        ],
+        responses={
+            200: MeSerializer,
+            400: error_response(
+                "Invalid data. Each field with a problem has a list of messages.",
+                {"username": ["This username is already taken."]},
+            ),
+            401: NOT_LOGGED_IN,
+        },
+    ),
+)
+class MeView(generics.RetrieveUpdateAPIView):
+    """GET / PATCH /api/auth/me/: the logged-in user's own details.
+
+    Uses the project default permission (IsAuthenticated), so a valid access token
+    is required.
+    """
+
+    serializer_class = MeSerializer
+    http_method_names = ["get", "patch", "head", "options"]  # no PUT: always partial updates
+
+    def get_object(self):
+        return self.request.user
+
