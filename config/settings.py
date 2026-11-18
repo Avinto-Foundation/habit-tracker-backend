@@ -145,6 +145,13 @@ SIMPLE_JWT = {
 REMEMBER_ME_REFRESH_LIFETIME = timedelta(days=7)
 
 
+# --- Google sign-in ---------------------------------------------------------
+
+# OAuth Client ID from Google Cloud Console (the same one the frontend uses).
+# Empty means Google sign-in is switched off and the endpoint answers 503.
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", "")
+
+
 # --- API docs (Swagger / OpenAPI) -------------------------------------------
 
 SPECTACULAR_SETTINGS = {

@@ -1,11 +1,14 @@
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.models import update_last_login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework import exceptions, serializers
+from google.auth.exceptions import GoogleAuthError, TransportError
+from rest_framework import exceptions, serializers, status
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from . import google
 from .models import validate_timezone
 from .tokens import RememberMeRefreshToken, refresh_token_for
 
@@ -158,3 +161,75 @@ class LogoutSerializer(serializers.Serializer):
     def validate(self, attrs: dict) -> dict:
         RefreshToken(attrs["refresh"]).blacklist()
         return {}
+
+
+class GoogleUnavailable(exceptions.APIException):
+    """Google sign-in can't work right now (not set up, or Google can't be reached)."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Google sign-in is not available right now. Please use email and password."
+    default_code = "google_unavailable"
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    """Checks a Google ID token, finds or creates the user and returns our JWT tokens."""
+
+    id_token = serializers.CharField(
+        write_only=True, help_text="The ID token (credential) the frontend got from Google."
+    )
+    remember_me = serializers.BooleanField(
+        write_only=True, required=False, default=False, help_text="Stay logged in for 7 days."
+    )
+    timezone = serializers.CharField(
+        write_only=True,
+        max_length=64,
+        required=False,
+        default="UTC",
+        validators=[validate_timezone],
+        help_text="Only used when a new account is created. Defaults to UTC.",
+    )
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)
+    user = UserSerializer(read_only=True)
+    created = serializers.BooleanField(
+        read_only=True, help_text="True if a new account was just made (first Google sign-in)."
+    )
+
+    def validate(self, attrs: dict) -> dict:
+        if not settings.GOOGLE_CLIENT_ID:
+            raise GoogleUnavailable()
+
+        try:
+            claims = google.verify_google_token(attrs["id_token"])
+        except TransportError:  # couldn't reach Google to download its keys
+            raise GoogleUnavailable()
+        except (ValueError, GoogleAuthError):  # fake, expired or made for another app
+            raise exceptions.AuthenticationFailed("Google sign-in failed. Please try again.")
+
+        if not claims.get("email") or not claims.get("email_verified"):
+            raise exceptions.AuthenticationFailed("Your Google email address is not verified.")
+
+        email = claims["email"].strip().lower()
+        user = User.objects.filter(email__iexact=email).first()
+        created = user is None
+        if created:
+            # No password: this account signs in with Google. (create_user with
+            # password=None marks the password as unusable.)
+            user = User.objects.create_user(
+                email=email,
+                username=google.unique_username_from_email(email),
+                full_name=(claims.get("name") or email.split("@")[0])[:150],
+                timezone=attrs["timezone"],
+                password=None,
+            )
+        elif not user.is_active:
+            raise exceptions.AuthenticationFailed("This account is disabled.")
+
+        refresh = refresh_token_for(user, remember_me=attrs["remember_me"])
+        update_last_login(None, user)
+        return {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserSerializer(user).data,
+            "created": created,
+        }
