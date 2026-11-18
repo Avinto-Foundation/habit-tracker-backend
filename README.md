@@ -99,16 +99,18 @@ More variables (email, Stripe, eSewa) will be added in later sprints.
 
 Every endpoint is documented with Swagger/OpenAPI, including request body, responses and errors. Open **http://localhost:8000/api/docs/** while the server is running.
 
-### Auth endpoints *(planned, Sprint 1)*
+### Auth endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/auth/register/` | Create an account |
-| POST | `/api/auth/login/` | Log in, returns access + refresh tokens |
-| POST | `/api/auth/token/refresh/` | Get a new access token |
+| POST | `/api/auth/login/` | Log in with email + password (+ optional `remember_me`), returns access + refresh tokens and the user |
+| POST | `/api/auth/token/refresh/` | Get a new access token (and a new refresh token) |
 | POST | `/api/auth/logout/` | Log out (blacklist refresh token) |
-| POST | `/api/auth/google/` | Sign in / sign up with a Google ID token |
-| GET | `/api/auth/me/` | Get the logged-in user |
+| POST | `/api/auth/google/` | Sign in / sign up with a Google ID token *(planned)* |
+| GET | `/api/auth/me/` | Get the logged-in user *(planned)* |
+
+**Using tokens:** send the access token on every request as `Authorization: Bearer <access>`. Access tokens last 15 minutes; refresh tokens last 1 day (7 days with `remember_me`). Each refresh returns a new refresh token and blocks the old one. In Swagger, click **Authorize** and paste an access token.
 
 ## Testing
 

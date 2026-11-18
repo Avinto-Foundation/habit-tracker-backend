@@ -5,10 +5,55 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
-from .serializers import RegisterSerializer
+from .serializers import (
+    LoginSerializer,
+    LogoutSerializer,
+    RefreshSerializer,
+    RegisterSerializer,
+)
+
+USER_EXAMPLE = {
+    "id": 1,
+    "full_name": "Samikshya Adhikari",
+    "username": "samikshya",
+    "email": "sam@example.com",
+    "timezone": "Asia/Kathmandu",
+}
+TOKEN_EXAMPLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+
+def error_response(description: str, example: dict) -> OpenApiResponse:
+    """Swagger docs for an error response with one example body."""
+    return OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=description,
+        examples=[OpenApiExample(description, value=example)],
+    )
+
+
+class PublicTokenView(generics.GenericAPIView):
+    """Base for the token endpoints: open to everyone, and bad tokens or
+    credentials give a proper 401 (not 403 or a server error)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []  # These endpoints are how you *get* logged in.
+
+    def get_authenticate_header(self, request) -> str:
+        # Without this, DRF turns 401 into 403 when a view has no authentication class.
+        return 'Bearer realm="api"'
+
+    def handle_exception(self, exc):
+        if isinstance(exc, TokenError):  # expired, tampered with or blacklisted token
+            exc = InvalidToken(exc.args[0])
+        return super().handle_exception(exc)
+
+
+# --- Sign up -----------------------------------------------------------------
 
 
 @extend_schema_view(
@@ -36,32 +81,17 @@ from .serializers import RegisterSerializer
                 },
             ),
             OpenApiExample(
-                "Account created",
-                response_only=True,
-                status_codes=["201"],
-                value={
-                    "id": 1,
-                    "full_name": "Samikshya Adhikari",
-                    "username": "samikshya",
-                    "email": "sam@example.com",
-                    "timezone": "Asia/Kathmandu",
-                },
+                "Account created", response_only=True, status_codes=["201"], value=USER_EXAMPLE
             ),
         ],
         responses={
             201: RegisterSerializer,
-            400: OpenApiResponse(
-                response=OpenApiTypes.OBJECT,
-                description="Invalid data. Each field with a problem has a list of messages.",
-                examples=[
-                    OpenApiExample(
-                        "Validation errors",
-                        value={
-                            "email": ["An account with this email already exists."],
-                            "password_confirm": ["Passwords don't match."],
-                        },
-                    ),
-                ],
+            400: error_response(
+                "Invalid data. Each field with a problem has a list of messages.",
+                {
+                    "email": ["An account with this email already exists."],
+                    "password_confirm": ["Passwords don't match."],
+                },
             ),
         },
     )
@@ -72,3 +102,116 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
     authentication_classes = []  # Signing up never needs an existing login.
+
+
+# --- Log in ------------------------------------------------------------------
+
+
+class LoginView(PublicTokenView):
+    """POST /api/auth/login/: swap email + password for JWT tokens."""
+
+    serializer_class = LoginSerializer
+
+    @extend_schema(
+        summary="Log in",
+        description=(
+            "Log in with email and password. Returns an **access** token (15 minutes) and a "
+            "**refresh** token (1 day, or 7 days with `remember_me`), plus the user's details.\n\n"
+            "Send the access token on later requests as `Authorization: Bearer <access>`. "
+            "In Swagger, click **Authorize** and paste the access token."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample(
+                "Log in",
+                request_only=True,
+                value={"email": "sam@example.com", "password": "my-Strong-pass-1", "remember_me": True},
+            ),
+            OpenApiExample(
+                "Logged in",
+                response_only=True,
+                status_codes=["200"],
+                value={"access": TOKEN_EXAMPLE, "refresh": TOKEN_EXAMPLE, "user": USER_EXAMPLE},
+            ),
+        ],
+        responses={
+            200: LoginSerializer,
+            400: error_response("A field is missing or invalid.", {"email": ["This field is required."]}),
+            401: error_response(
+                "Wrong email or password.", {"detail": "Email or password is incorrect."}
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+# --- Refresh -----------------------------------------------------------------
+
+
+class RefreshView(PublicTokenView):
+    """POST /api/auth/token/refresh/: get a new access token."""
+
+    serializer_class = RefreshSerializer
+
+    @extend_schema(
+        summary="Get a new access token",
+        description=(
+            "Send your refresh token to get a new access token **and** a new refresh token. "
+            "The old refresh token stops working, so always keep the newest one."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample("Refresh", request_only=True, value={"refresh": TOKEN_EXAMPLE}),
+            OpenApiExample(
+                "New tokens",
+                response_only=True,
+                status_codes=["200"],
+                value={"access": TOKEN_EXAMPLE, "refresh": TOKEN_EXAMPLE},
+            ),
+        ],
+        responses={
+            200: RefreshSerializer,
+            401: error_response(
+                "The refresh token is expired, invalid or already used.",
+                {"detail": "Token is blacklisted", "code": "token_not_valid"},
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+# --- Log out -----------------------------------------------------------------
+
+
+class LogoutView(PublicTokenView):
+    """POST /api/auth/logout/: make a refresh token unusable."""
+
+    serializer_class = LogoutSerializer
+
+    @extend_schema(
+        summary="Log out",
+        description=(
+            "Blacklists the refresh token so it can't be used again. The frontend should also "
+            "delete both tokens. (An access token keeps working until it expires, at most "
+            "15 minutes.)"
+        ),
+        tags=["auth"],
+        examples=[OpenApiExample("Log out", request_only=True, value={"refresh": TOKEN_EXAMPLE})],
+        responses={
+            205: OpenApiResponse(description="Logged out. No response body."),
+            401: error_response(
+                "The refresh token is expired, invalid or already used.",
+                {"detail": "Token is blacklisted", "code": "token_not_valid"},
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(status=status.HTTP_205_RESET_CONTENT)
