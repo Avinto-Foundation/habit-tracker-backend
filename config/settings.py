@@ -6,6 +6,7 @@ project root (see `.env.example`). Never commit `.env`.
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -47,6 +48,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "drf_spectacular",
     # Local
@@ -119,9 +121,28 @@ AUTH_PASSWORD_VALIDATORS = [
 # --- Django REST Framework --------------------------------------------------
 
 REST_FRAMEWORK = {
+    # Requests prove who they are with "Authorization: Bearer <access token>".
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
+
+
+# --- JWT (login tokens) -----------------------------------------------------
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    # Each refresh gives a new refresh token and blocks the old one.
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+# How long a refresh token lasts when the user ticks "Remember me".
+REMEMBER_ME_REFRESH_LIFETIME = timedelta(days=7)
 
 
 # --- API docs (Swagger / OpenAPI) -------------------------------------------
