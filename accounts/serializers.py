@@ -15,6 +15,26 @@ from .tokens import RememberMeRefreshToken, refresh_token_for
 User = get_user_model()
 
 
+def username_field() -> serializers.RegexField:
+    """Username rules shared by sign-up and profile updates."""
+    return serializers.RegexField(
+        r"^[A-Za-z0-9_]{3,30}$",
+        error_messages={
+            "invalid": "Use 3-30 characters: letters, numbers and underscores only.",
+        },
+    )
+
+
+def check_username_free(value: str, current_user=None) -> str:
+    """Raise an error if someone else already has this username (ignoring upper/lower case)."""
+    taken = User.objects.filter(username__iexact=value)
+    if current_user is not None:
+        taken = taken.exclude(pk=current_user.pk)
+    if taken.exists():
+        raise serializers.ValidationError("This username is already taken.")
+    return value
+
+
 class UserSerializer(serializers.ModelSerializer):
     """The public details of a user, as sent to the frontend."""
 
@@ -31,12 +51,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     """
 
     full_name = serializers.CharField(max_length=150)
-    username = serializers.RegexField(
-        r"^[A-Za-z0-9_]{3,30}$",
-        error_messages={
-            "invalid": "Use 3-30 characters: letters, numbers and underscores only.",
-        },
-    )
+    username = username_field()
     # Declared by hand so we can check uniqueness ourselves, ignoring upper/lower case.
     email = serializers.EmailField(max_length=254)
     password = serializers.CharField(
@@ -68,9 +83,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return email
 
     def validate_username(self, value: str) -> str:
-        if User.objects.filter(username__iexact=value).exists():
-            raise serializers.ValidationError("This username is already taken.")
-        return value
+        return check_username_free(value)
 
     def validate(self, attrs: dict) -> dict:
         if attrs["password"] != attrs["password_confirm"]:
@@ -233,3 +246,26 @@ class GoogleLoginSerializer(serializers.Serializer):
             "user": UserSerializer(user).data,
             "created": created,
         }
+
+
+class MeSerializer(serializers.ModelSerializer):
+    """The logged-in user's own details. Name, username and time zone can be changed."""
+
+    full_name = serializers.CharField(max_length=150)
+    username = username_field()
+
+    class Meta:
+        model = User
+        fields = ["id", "full_name", "username", "email", "timezone"]
+        # Email changes need extra safety checks, so they get their own endpoint later.
+        read_only_fields = ["id", "email"]
+
+    def validate_full_name(self, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("This field may not be blank.")
+        return value
+
+    def validate_username(self, value: str) -> str:
+        # Keeping your own username (even with different capitals) is fine.
+        return check_username_free(value, current_user=self.instance)

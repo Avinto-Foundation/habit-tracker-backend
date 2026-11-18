@@ -108,7 +108,8 @@ Every endpoint is documented with Swagger/OpenAPI, including request body, respo
 | POST | `/api/auth/token/refresh/` | Get a new access token (and a new refresh token) |
 | POST | `/api/auth/logout/` | Log out (blacklist refresh token) |
 | POST | `/api/auth/google/` | Sign in / sign up with a Google ID token (201 if a new account was made, 200 if it already existed) |
-| GET | `/api/auth/me/` | Get the logged-in user *(planned)* |
+| GET | `/api/auth/me/` | Get the logged-in user (needs an access token) |
+| PATCH | `/api/auth/me/` | Update your own full name, username or time zone |
 
 **Using tokens:** send the access token on every request as `Authorization: Bearer <access>`. Access tokens last 15 minutes; refresh tokens last 1 day (7 days with `remember_me`). Each refresh returns a new refresh token and blocks the old one. In Swagger, click **Authorize** and paste an access token.
 
