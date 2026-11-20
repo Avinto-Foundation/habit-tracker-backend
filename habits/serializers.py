@@ -150,3 +150,57 @@ class DateRangeSerializer(serializers.Serializer):
         if start and end and start > end:
             raise serializers.ValidationError({"to": "Must be on or after 'from'."})
         return attrs
+
+
+# --- Stats -------------------------------------------------------------------------
+
+
+class MonthQuerySerializer(serializers.Serializer):
+    """The optional `?month=YYYY-MM` for the stats calendar."""
+
+    month = serializers.RegexField(
+        r"^\d{4}-(0[1-9]|1[0-2])$",
+        required=False,
+        error_messages={"invalid": "Use YYYY-MM, e.g. 2026-11."},
+    )
+
+    def validate_month(self, value: str) -> tuple[int, int]:
+        year, month = value.split("-")
+        return int(year), int(month)
+
+
+class CalendarDaySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    status = serializers.ChoiceField(
+        choices=["done", "bonus", "missed", "pending", "off", "future", "before_start"]
+    )
+
+
+class CalendarSerializer(serializers.Serializer):
+    month = serializers.CharField(help_text="YYYY-MM")
+    days = CalendarDaySerializer(many=True)
+
+
+class WeekProgressSerializer(serializers.Serializer):
+    done = serializers.IntegerField(help_text="Check-ins so far this week (Mon–Sun).")
+    goal = serializers.IntegerField(help_text="Check-ins needed this week.")
+
+
+class HabitStatsSerializer(serializers.Serializer):
+    """Read-only: the shape of GET /api/habits/<id>/stats/."""
+
+    habit = serializers.IntegerField()
+    today = serializers.DateField(help_text="Today in the user's time zone.")
+    current_streak = serializers.IntegerField()
+    longest_streak = serializers.IntegerField()
+    streak_unit = serializers.ChoiceField(choices=["days", "weeks"])
+    completion_rate = serializers.IntegerField(
+        allow_null=True,
+        help_text="Percent of the plan done in the last 30 days; null if nothing was due yet.",
+    )
+    total_checkins = serializers.IntegerField()
+    done_today = serializers.BooleanField()
+    week_progress = WeekProgressSerializer(
+        allow_null=True, help_text="Only for 'times per week' habits."
+    )
+    calendar = CalendarSerializer(allow_null=True, help_text="Only when ?month= is given.")
