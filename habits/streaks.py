@@ -22,7 +22,7 @@ from collections import Counter
 from collections.abc import Iterator
 from datetime import date, timedelta
 
-from .dates import user_today
+from .dates import local_date, user_today
 from .models import Habit
 
 DAY = timedelta(days=1)
@@ -184,6 +184,63 @@ def month_calendar(
     ]
 
 
+# --- This week / today -------------------------------------------------------------
+
+
+def week_progress(habit, done: set[date], start: date, today: date) -> dict:
+    """{"done": check-ins so far this week, "goal": how many this week needs}."""
+    this_monday = week_start(today)
+    return {
+        "done": sum(1 for day in done if this_monday <= day <= today),
+        "goal": week_goal(habit, this_monday, start),
+    }
+
+
+def is_due_today(habit, done: set[date], start: date, today: date) -> bool:
+    """Should the habit be on today's list?
+
+    Day habits: when today is one of its days. Weekly habits: until this week's goal
+    is met, and also on the day it was ticked off (so it doesn't vanish on tap).
+    """
+    if is_weekly(habit):
+        progress = week_progress(habit, done, start, today)
+        return today in done or progress["done"] < progress["goal"]
+    return is_scheduled(habit, today)
+
+
+def today_overview(user, habits) -> dict:
+    """Everything for GET /api/habits/today/.
+
+    `habits` must be the user's active habits with `checkins` prefetched, so this
+    runs no extra database queries however many habits there are.
+    """
+    today = user_today(user)
+    due, not_due = [], []
+    for habit in habits:
+        checkins = list(habit.checkins.all())  # prefetched, no query
+        start = local_date(habit.created_at, user)
+        done = {c.date for c in checkins if start <= c.date <= today}
+        current, _ = streaks(habit, done, start, today)
+        todays_checkin = next((c for c in checkins if c.date == today), None)
+
+        entry = {
+            "habit": habit,
+            "done_today": todays_checkin is not None,
+            "checkin": todays_checkin,
+            "current_streak": current,
+            "streak_unit": "weeks" if is_weekly(habit) else "days",
+            "week_progress": week_progress(habit, done, start, today) if is_weekly(habit) else None,
+        }
+        (due if is_due_today(habit, done, start, today) else not_due).append(entry)
+
+    return {
+        "date": today,
+        "summary": {"done": sum(e["done_today"] for e in due), "total": len(due)},
+        "due": due,
+        "not_due": not_due,
+    }
+
+
 # --- Everything for the stats endpoint ---------------------------------------------
 
 
@@ -208,11 +265,7 @@ def habit_stats(habit: Habit, month: tuple[int, int] | None = None) -> dict:
         "calendar": None,
     }
     if is_weekly(habit):
-        this_monday = week_start(today)
-        stats["week_progress"] = {
-            "done": sum(1 for day in done if day >= this_monday),
-            "goal": week_goal(habit, this_monday, start),
-        }
+        stats["week_progress"] = week_progress(habit, done, start, today)
     if month:
         year, month_number = month
         stats["calendar"] = {

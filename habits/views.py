@@ -20,8 +20,9 @@ from .serializers import (
     HabitSerializer,
     HabitStatsSerializer,
     MonthQuerySerializer,
+    TodaySerializer,
 )
-from .streaks import habit_stats
+from .streaks import habit_stats, today_overview
 
 DAILY_EXAMPLE = {
     "name": "Read",
@@ -124,6 +125,28 @@ class HabitViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
+    @extend_schema(
+        summary="Today's habits",
+        description=(
+            "Everything for the Today page in one request, in your profile time zone.\n\n"
+            "* `due`: active habits due today. Every day: always. Specific days: when today is "
+            "one of them. Times per week: until this week's goal is met (and on the day it "
+            "was ticked off).\n"
+            "* `not_due`: your other active habits (they can still be ticked off as a bonus).\n"
+            "* `summary`: how many of the `due` habits are done.\n\n"
+            "Archived habits are left out."
+        ),
+        responses=TodaySerializer,
+    )
+    @action(detail=False, methods=["get"])
+    def today(self, request):
+        habits = (
+            Habit.objects.filter(owner=request.user, archived=False)
+            .prefetch_related("checkins")
+            .order_by("created_at", "id")
+        )
+        return Response(TodaySerializer(today_overview(request.user, habits)).data)
 
     @extend_schema(
         summary="Streaks and progress for a habit",
