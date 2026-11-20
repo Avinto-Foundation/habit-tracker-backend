@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 
+from .dates import local_date
+
 DEFAULT_ICON = "✅"
 DEFAULT_COLOR = "#0F766E"  # the app's teal
 
@@ -99,6 +101,10 @@ class Habit(models.Model):
     def __str__(self) -> str:
         return f"{self.icon} {self.name}"
 
+    def created_on(self):
+        """The day the habit was created, in the owner's time zone."""
+        return local_date(self.created_at, self.owner)
+
     def clean(self) -> None:
         super().clean()
         if not isinstance(self.weekdays, list) or any(
@@ -108,3 +114,24 @@ class Habit(models.Model):
         errors = schedule_errors(self.schedule_type, self.weekdays, self.times_per_week)
         if errors:
             raise ValidationError(errors)
+
+
+class CheckIn(models.Model):
+    """"I did this habit on this day." At most one per habit per day.
+
+    `date` is the user's own calendar day (their profile time zone), not UTC.
+    """
+
+    habit = models.ForeignKey(Habit, on_delete=models.CASCADE, related_name="checkins")
+    date = models.DateField()
+    note = models.CharField(max_length=280, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["date"]
+        constraints = [
+            models.UniqueConstraint(fields=["habit", "date"], name="one_checkin_per_habit_per_day"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.habit} on {self.date}"

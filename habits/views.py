@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -5,10 +6,18 @@ from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
 )
-from rest_framework import viewsets
+from rest_framework import generics, status, viewsets
+from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 
-from .models import Habit
-from .serializers import HabitSerializer
+from .dates import is_today_or_yesterday
+from .models import CheckIn, Habit
+from .serializers import (
+    CheckInNoteSerializer,
+    CheckInSerializer,
+    DateRangeSerializer,
+    HabitSerializer,
+)
 
 DAILY_EXAMPLE = {
     "name": "Read",
@@ -111,3 +120,110 @@ class HabitViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
+
+# --- Check-ins -------------------------------------------------------------------
+
+CHECKIN_EXAMPLE = {
+    "id": 7,
+    "habit": 1,
+    "date": "2026-11-20",
+    "note": "Read on the bus",
+    "created_at": "2026-11-20T08:15:00Z",
+}
+DATE_PARAM = OpenApiParameter(
+    "date", OpenApiTypes.DATE, OpenApiParameter.PATH, description="The check-in day, YYYY-MM-DD."
+)
+
+
+class HabitCheckInsMixin:
+    """Finds the habit in the URL, but only among the logged-in user's habits."""
+
+    def get_habit(self) -> Habit:
+        return get_object_or_404(Habit, pk=self.kwargs["habit_id"], owner=self.request.user)
+
+
+@extend_schema(tags=["check-ins"])
+class CheckInListCreateView(HabitCheckInsMixin, generics.GenericAPIView):
+    """GET / POST /api/habits/<habit_id>/checkins/"""
+
+    serializer_class = CheckInSerializer
+
+    @extend_schema(
+        summary="List a habit's check-ins",
+        description="Oldest first. Filter with `?from=` and/or `?to=` (YYYY-MM-DD, inclusive). "
+        + ONLY_YOURS,
+        parameters=[
+            OpenApiParameter("from", OpenApiTypes.DATE, description="First day to include."),
+            OpenApiParameter("to", OpenApiTypes.DATE, description="Last day to include."),
+        ],
+        responses=CheckInSerializer(many=True),
+    )
+    def get(self, request, habit_id):
+        habit = self.get_habit()
+        dates = DateRangeSerializer(data=request.query_params)
+        dates.is_valid(raise_exception=True)
+
+        checkins = habit.checkins.all()
+        if "from" in dates.validated_data:
+            checkins = checkins.filter(date__gte=dates.validated_data["from"])
+        if "to" in dates.validated_data:
+            checkins = checkins.filter(date__lte=dates.validated_data["to"])
+        return Response(CheckInSerializer(checkins, many=True).data)
+
+    @extend_schema(
+        summary="Check in (tick off the habit)",
+        description=(
+            "Marks the habit done for **today** (in your profile time zone), or for "
+            "**yesterday** with `date`. Older or future days are refused, and so are days "
+            "before the habit was created and archived habits.\n\n"
+            "Safe to send twice: if the day is already checked in you get the existing "
+            "check-in back with **200** (a new `note` replaces the old one). A new check-in "
+            "gives **201**. " + ONLY_YOURS
+        ),
+        examples=[
+            OpenApiExample("Today", value={}, request_only=True),
+            OpenApiExample("Today, with a note", value={"note": "Read on the bus"}, request_only=True),
+            OpenApiExample("Yesterday", value={"date": "2026-11-19"}, request_only=True),
+            OpenApiExample("Check-in", value=CHECKIN_EXAMPLE, response_only=True),
+        ],
+        responses={200: CheckInSerializer, 201: CheckInSerializer},
+    )
+    def post(self, request, habit_id):
+        serializer = CheckInSerializer(data=request.data, context={"habit": self.get_habit()})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        code = status.HTTP_201_CREATED if serializer.was_created else status.HTTP_200_OK
+        return Response(serializer.data, status=code)
+
+
+@extend_schema(tags=["check-ins"], parameters=[DATE_PARAM])
+class CheckInDetailView(HabitCheckInsMixin, generics.GenericAPIView):
+    """PATCH / DELETE /api/habits/<habit_id>/checkins/<date>/"""
+
+    serializer_class = CheckInNoteSerializer
+
+    def get_object(self) -> CheckIn:
+        return get_object_or_404(CheckIn, habit=self.get_habit(), date=self.kwargs["date"])
+
+    @extend_schema(
+        summary="Edit a check-in's note",
+        examples=[OpenApiExample("Note", value={"note": "Only 10 pages today"}, request_only=True)],
+    )
+    def patch(self, request, habit_id, date):
+        serializer = CheckInNoteSerializer(self.get_object(), data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Undo a check-in",
+        description="Only for today or yesterday, like checking in. " + ONLY_YOURS,
+        responses={204: None},
+    )
+    def delete(self, request, habit_id, date):
+        checkin = self.get_object()
+        if not is_today_or_yesterday(checkin.date, request.user):
+            raise ValidationError({"date": "You can only undo today's or yesterday's check-in."})
+        checkin.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
