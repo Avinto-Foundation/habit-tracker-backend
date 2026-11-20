@@ -7,6 +7,7 @@ from drf_spectacular.utils import (
     extend_schema_view,
 )
 from rest_framework import generics, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
@@ -17,7 +18,10 @@ from .serializers import (
     CheckInSerializer,
     DateRangeSerializer,
     HabitSerializer,
+    HabitStatsSerializer,
+    MonthQuerySerializer,
 )
+from .streaks import habit_stats
 
 DAILY_EXAMPLE = {
     "name": "Read",
@@ -112,7 +116,7 @@ class HabitViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):  # Swagger docs being built: no user
             return Habit.objects.none()
-        habits =Habit.objects.filter(owner=self.request.user)
+        habits = Habit.objects.filter(owner=self.request.user)
         if self.action == "list":
             show_archived = self.request.query_params.get("archived", "").lower() == "true"
             habits = habits.filter(archived=show_archived)
@@ -120,6 +124,35 @@ class HabitViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
+    @extend_schema(
+        summary="Streaks and progress for a habit",
+        description=(
+            "Works in your profile time zone.\n\n"
+            "* `current_streak` / `longest_streak`: in **days** (every day / specific days: "
+            "scheduled days in a row that were done) or **weeks** (times per week: weeks in "
+            "a row that met the goal), see `streak_unit`. Today / this week only breaks the "
+            "streak once it's over.\n"
+            "* `completion_rate`: percent of the plan done in the last 30 days.\n"
+            "* `week_progress`: this week's check-ins vs goal (weekly habits only).\n"
+            "* `calendar`: add `?month=YYYY-MM` to get every day of that month as `done`, "
+            "`bonus` (done on a day off), `missed`, `pending` (today, not done yet), `off`, "
+            "`future` or `before_start`.\n\n" + ONLY_YOURS
+        ),
+        parameters=[
+            OpenApiParameter(
+                "month", OpenApiTypes.STR, description="YYYY-MM, e.g. 2026-11. Adds `calendar`."
+            )
+        ],
+        responses=HabitStatsSerializer,
+    )
+    @action(detail=True, methods=["get"])
+    def stats(self, request, pk=None):
+        habit = self.get_object()
+        query = MonthQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        stats = habit_stats(habit, month=query.validated_data.get("month"))
+        return Response(HabitStatsSerializer(stats).data)
 
 
 # --- Check-ins -------------------------------------------------------------------
