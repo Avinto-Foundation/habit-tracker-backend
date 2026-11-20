@@ -204,3 +204,33 @@ class HabitStatsSerializer(serializers.Serializer):
         allow_null=True, help_text="Only for 'times per week' habits."
     )
     calendar = CalendarSerializer(allow_null=True, help_text="Only when ?month= is given.")
+
+
+# --- Today -----------------------------------------------------------------------------
+
+
+class TodayHabitSerializer(serializers.Serializer):
+    """One habit on the Today page."""
+
+    habit = HabitSerializer()
+    done_today = serializers.BooleanField()
+    checkin = CheckInSerializer(allow_null=True, help_text="Today's check-in, if done.")
+    current_streak = serializers.IntegerField()
+    streak_unit = serializers.ChoiceField(choices=["days", "weeks"])
+    week_progress = WeekProgressSerializer(
+        allow_null=True, help_text="Only for 'times per week' habits."
+    )
+
+
+class TodaySummarySerializer(serializers.Serializer):
+    done = serializers.IntegerField(help_text="Due habits done today.")
+    total = serializers.IntegerField(help_text="Habits due today.")
+
+
+class TodaySerializer(serializers.Serializer):
+    """Read-only: the shape of GET /api/habits/today/."""
+
+    date = serializers.DateField(help_text="Today in the user's time zone.")
+    summary = TodaySummarySerializer()
+    due = TodayHabitSerializer(many=True)
+    not_due = TodayHabitSerializer(many=True, help_text="Can still be ticked off as a bonus.")
