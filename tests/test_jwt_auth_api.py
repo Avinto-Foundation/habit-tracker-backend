@@ -53,6 +53,9 @@ def test_login_returns_tokens_and_user(user):
         "username": "sam",
         "email": "sam@example.com",
         "timezone": "UTC",
+        "bio": "",
+        "avatar": None,
+        "date_joined": user.date_joined.isoformat().replace("+00:00", "Z"),
     }
     assert "password" not in body["user"]
 

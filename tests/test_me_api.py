@@ -50,6 +50,9 @@ def test_get_me_returns_the_logged_in_user(user, logged_in):
         "username": "sam",
         "email": "sam@example.com",
         "timezone": "Asia/Kathmandu",
+        "bio": "",
+        "avatar": None,
+        "date_joined": user.date_joined.isoformat().replace("+00:00", "Z"),
     }
 
 

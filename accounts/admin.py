@@ -6,7 +6,7 @@ from .models import User
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    """Django's user admin, adjusted for email login, full name and time zone."""
+    """Django's user admin, adjusted for email login, full name, time zone, bio and photo."""
 
     ordering = ["email"]
     list_display = ["email", "username", "full_name", "timezone", "is_staff"]
@@ -15,7 +15,7 @@ class UserAdmin(BaseUserAdmin):
     # The "edit user" page
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Profile", {"fields": ("username", "full_name", "timezone")}),
+        ("Profile", {"fields": ("username", "full_name", "timezone", "bio", "avatar")}),
         (
             "Permissions",
             {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")},

@@ -1,3 +1,4 @@
+import uuid
 from zoneinfo import available_timezones
 
 from django.contrib.auth.models import AbstractUser
@@ -9,6 +10,15 @@ def validate_timezone(value: str) -> None:
     """Reject anything that isn't a real time zone name, e.g. 'Asia/Kathmandu'."""
     if value not in available_timezones():
         raise ValidationError(f"'{value}' is not a valid time zone.")
+
+
+def avatar_upload_path(user: "User", filename: str) -> str:
+    """Where a profile photo is saved: media/avatars/<user id>/<random name>.webp.
+
+    A new random name for every upload means browsers never show an old cached
+    photo, and nobody can guess another user's photo address.
+    """
+    return f"avatars/{user.pk}/{uuid.uuid4().hex}.webp"
 
 
 class User(AbstractUser):
@@ -25,6 +35,15 @@ class User(AbstractUser):
         default="UTC",
         validators=[validate_timezone],
         help_text="Time zone name, e.g. Asia/Kathmandu. Used to work out daily streaks.",
+    )
+    bio = models.CharField(
+        max_length=160, blank=True, help_text="A short line about yourself, shown on your profile."
+    )
+    avatar = models.ImageField(
+        "profile photo",
+        upload_to=avatar_upload_path,
+        blank=True,
+        help_text="Saved as a 512 px WebP image (see accounts/avatars.py).",
     )
 
     # Log in with email instead of username.

@@ -160,7 +160,10 @@ Every endpoint is documented with Swagger/OpenAPI, including request body, respo
 | POST | `/api/auth/logout/` | Log out (blacklist refresh token) |
 | POST | `/api/auth/google/` | Sign in / sign up with a Google ID token (201 if a new account was made, 200 if it already existed) |
 | GET | `/api/auth/me/` | Get the logged-in user (needs an access token) |
-| PATCH | `/api/auth/me/` | Update your own full name, username or time zone |
+| PATCH | `/api/auth/me/` | Update your own full name, username, time zone or bio |
+| PUT | `/api/auth/me/avatar/` | Upload a profile photo (multipart, JPG/PNG/WebP, max 2 MB; saved as a 512 px WebP without hidden data) |
+| DELETE | `/api/auth/me/avatar/` | Remove your profile photo |
+| POST | `/api/auth/me/password/` | Change your password (needs the current one; logs out other devices) |
 | POST | `/api/auth/password-reset/` | Email a one-time reset link (same answer whether or not the email exists; 5 per hour) |
 | POST | `/api/auth/password-reset/confirm/` | Set a new password with the link's `uid` + `token`; logs out everywhere |
 
