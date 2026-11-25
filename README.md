@@ -76,6 +76,51 @@ python manage.py runserver
 | http://localhost:8000/api/schema/ | OpenAPI schema (YAML) |
 | http://localhost:8000/admin/ | Django admin |
 
+## Run with Docker
+
+Runs the database, this API and the React app together, with no local Python,
+Node or PostgreSQL needed. You need [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+The frontend repo must be cloned **next to** this one:
+
+```
+Habit_Tracker/
+  habit-tracker-backend/     <- run the commands here
+  habit-tracker-frontend/
+```
+
+```bash
+# 1. Create .env from .env.example and set at least SECRET_KEY and DB_PASSWORD
+#    (DB_HOST/DB_PORT are set to the Docker database automatically).
+#    Optional: habit-tracker-frontend/.env for VITE_GOOGLE_CLIENT_ID.
+
+# 2. Build and start everything (first time takes a few minutes)
+docker compose up --build
+
+# 3. Create an admin user (in a second terminal)
+docker compose exec backend python manage.py createsuperuser
+```
+
+| Service | Address |
+|---|---|
+| React app | http://localhost:5173 |
+| API + Swagger | http://localhost:8000/api/docs/ |
+| PostgreSQL (Docker) | `localhost:5433` (5433, so it doesn't clash with a local PostgreSQL on 5432) |
+
+| Task | Command |
+|---|---|
+| Stop | `Ctrl+C`, or `docker compose down` |
+| Run the backend tests | `docker compose run --rm backend pytest` |
+| See the logs of one part | `docker compose logs -f backend` |
+| Start again after changing code | `docker compose up --build` |
+| Delete the Docker database too | `docker compose down -v` (removes all data in it) |
+
+Notes:
+- Ports 8000 and 5173 must be free: stop a local `runserver` / `npm run dev` first.
+- The code is copied into the images, so after changing code run `up --build` again. For day-to-day coding, the normal setup above (venv + `runserver`) is quicker.
+- The Docker database is separate from your local PostgreSQL: accounts made in one don't exist in the other.
+- Don't use `$` in `.env` values: Docker Compose treats `$...` as a variable.
+
 ## Environment variables
 
 Create a `.env` file in the project root. Never commit `.env`; only commit `.env.example`.

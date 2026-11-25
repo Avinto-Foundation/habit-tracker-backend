@@ -76,7 +76,9 @@ def test_today_needs_login(db):
     assert APIClient().get(URL).status_code == 401
 
 
-def test_new_user_has_an_empty_today(api):
+def test_new_user_has_an_empty_today(monkeypatch, api):
+    set_now(monkeypatch, NOW)  # no habits are made here, so pin "now" directly
+
     response = api.get(URL)
 
     assert response.status_code == 200

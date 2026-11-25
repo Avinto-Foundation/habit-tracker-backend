@@ -1,0 +1,32 @@
+# Files Docker leaves out of the backend image.
+
+# Secrets: settings come from .env at run time (env_file in docker-compose.yml),
+# never baked into the image.
+.env
+.env.*
+!.env.example
+
+# The local virtual environment (the image installs its own packages)
+venv/
+.venv/
+
+# Git, caches and editor files
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+
+# Generated files
+staticfiles/
+media/
+*.log
+
+# Docker files themselves
+Dockerfile
+docker-compose*.yml
+.dockerignore
