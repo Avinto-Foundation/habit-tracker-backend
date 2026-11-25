@@ -4,11 +4,12 @@ from django.contrib.auth.models import update_last_login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from google.auth.exceptions import GoogleAuthError, TransportError
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import exceptions, serializers, status
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from . import google, password_reset
+from . import avatars, google, password_reset
 from .models import validate_timezone
 from .tokens import RememberMeRefreshToken, refresh_token_for
 
@@ -35,12 +36,45 @@ def check_username_free(value: str, current_user=None) -> str:
     return value
 
 
-class UserSerializer(serializers.ModelSerializer):
+def avatar_url(user, request=None) -> str | None:
+    """Full address of the user's profile photo, or None if they have none.
+
+    A full URL ("http://localhost:8000/media/...") because the React app runs on
+    another address and couldn't load "/media/..." from itself.
+    """
+    if not user.avatar:
+        return None
+    url = user.avatar.url
+    return request.build_absolute_uri(url) if request else url
+
+
+class AvatarUrlMixin:
+    """Adds `avatar` as a full URL (needs `request` in the serializer context)."""
+
+    @extend_schema_field(
+        serializers.URLField(allow_null=True, help_text="Profile photo, or null if none.")
+    )
+    def get_avatar(self, user) -> str | None:
+        return avatar_url(user, self.context.get("request"))
+
+
+class UserSerializer(AvatarUrlMixin, serializers.ModelSerializer):
     """The public details of a user, as sent to the frontend."""
+
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "username", "email", "timezone"]
+        fields = [
+            "id",
+            "full_name",
+            "username",
+            "email",
+            "timezone",
+            "bio",
+            "avatar",
+            "date_joined",
+        ]
         read_only_fields = fields
 
 
@@ -145,7 +179,7 @@ class LoginSerializer(serializers.Serializer):
         return {
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "user": UserSerializer(user).data,
+            "user": UserSerializer(user, context=self.context).data,
         }
 
 
@@ -243,22 +277,36 @@ class GoogleLoginSerializer(serializers.Serializer):
         return {
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "user": UserSerializer(user).data,
+            "user": UserSerializer(user, context=self.context).data,
             "created": created,
         }
 
 
-class MeSerializer(serializers.ModelSerializer):
-    """The logged-in user's own details. Name, username and time zone can be changed."""
+class MeSerializer(AvatarUrlMixin, serializers.ModelSerializer):
+    """The logged-in user's own details. Name, username, time zone and bio can be changed.
+
+    The photo has its own endpoint (it's a file upload) and so does the password
+    (it needs the current password).
+    """
 
     full_name = serializers.CharField(max_length=150)
     username = username_field()
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "full_name", "username", "email", "timezone"]
+        fields = [
+            "id",
+            "full_name",
+            "username",
+            "email",
+            "timezone",
+            "bio",
+            "avatar",
+            "date_joined",
+        ]
         # Email changes need extra safety checks, so they get their own endpoint later.
-        read_only_fields = ["id", "email"]
+        read_only_fields = ["id", "email", "date_joined"]
 
     def validate_full_name(self, value: str) -> str:
         value = value.strip()
@@ -269,6 +317,63 @@ class MeSerializer(serializers.ModelSerializer):
     def validate_username(self, value: str) -> str:
         # Keeping your own username (even with different capitals) is fine.
         return check_username_free(value, current_user=self.instance)
+
+    def validate_bio(self, value: str) -> str:
+        # Keep it on one line: line breaks would look odd on a profile card.
+        return " ".join(value.split())
+
+
+class AvatarUploadSerializer(serializers.Serializer):
+    """Upload a profile photo (sent as multipart/form-data, field name `avatar`)."""
+
+    avatar = serializers.FileField(help_text="JPG, PNG or WebP, at most 2 MB.")
+
+    def validate_avatar(self, upload):
+        try:
+            return avatars.process_avatar(upload)
+        except avatars.AvatarError as error:
+            raise serializers.ValidationError(str(error)) from error
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Change your password while logged in. Needs the current password.
+
+    On success every other login is ended (their refresh tokens are blocked) and
+    this one gets fresh tokens, so the user stays logged in here.
+    """
+
+    current_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    new_password_confirm = serializers.CharField(
+        write_only=True, style={"input_type": "password"}
+    )
+    remember_me = serializers.BooleanField(
+        write_only=True,
+        required=False,
+        default=False,
+        help_text="Give the new refresh token 7 days instead of 1 (like at login).",
+    )
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)
+
+    def validate_current_password(self, value: str) -> str:
+        if not self.context["request"].user.check_password(value):
+            raise serializers.ValidationError("Your current password is incorrect.")
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        user = self.context["request"].user
+        if attrs["new_password"] != attrs["new_password_confirm"]:
+            raise serializers.ValidationError({"new_password_confirm": "Passwords don't match."})
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "Choose a password different from your current one."}
+            )
+        try:
+            validate_password(attrs["new_password"], user)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError({"new_password": list(error.messages)}) from error
+        return attrs
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):

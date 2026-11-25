@@ -129,7 +129,11 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Limits for endpoints that could be abused (used with `throttle_scope` on a view).
-    "DEFAULT_THROTTLE_RATES": {"password_reset": "5/hour"},
+    "DEFAULT_THROTTLE_RATES": {
+        "password_reset": "5/hour",
+        # Stops someone with a stolen login from guessing the current password.
+        "password_change": "10/hour",
+    },
 }
 
 
@@ -202,5 +206,12 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# --- Uploaded files (profile photos) ------------------------------------------
+
+# Saved in <project>/media/ and served at /media/... (by Django itself only while
+# DEBUG is on; a real server or cloud storage serves them in production).
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

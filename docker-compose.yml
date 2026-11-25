@@ -45,6 +45,9 @@ services:
       # Inside Docker the database is the "db" service, not localhost.
       DB_HOST: db
       DB_PORT: "5432"
+    volumes:
+      # Uploaded profile photos, kept between restarts and rebuilds.
+      - media:/app/media
     ports:
       - "8000:8000"
     depends_on:
@@ -65,3 +68,4 @@ services:
 
 volumes:
   pgdata:
+  media:

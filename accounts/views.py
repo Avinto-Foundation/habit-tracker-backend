@@ -6,12 +6,16 @@ from drf_spectacular.utils import (
     extend_schema_view,
 )
 from rest_framework import generics, status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from .serializers import (
+    AvatarUploadSerializer,
+    ChangePasswordSerializer,
     GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
@@ -21,6 +25,7 @@ from .serializers import (
     RefreshSerializer,
     RegisterSerializer,
 )
+from .tokens import refresh_token_for
 
 USER_EXAMPLE = {
     "id": 1,
@@ -28,6 +33,9 @@ USER_EXAMPLE = {
     "username": "samikshya",
     "email": "sam@example.com",
     "timezone": "Asia/Kathmandu",
+    "bio": "Reading 20 pages a day.",
+    "avatar": "http://localhost:8000/media/avatars/1/3f2b9c.webp",
+    "date_joined": "2026-11-18T08:00:00Z",
 }
 TOKEN_EXAMPLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
@@ -301,8 +309,10 @@ NOT_LOGGED_IN = error_response(
     patch=extend_schema(
         summary="Update the logged-in user",
         description=(
-            "Change your `full_name`, `username` and/or `timezone`. Send only the fields you "
-            "want to change. Same rules as sign-up. `email` and `id` can't be changed here."
+            "Change your `full_name`, `username`, `timezone` and/or `bio` (max 160 characters). "
+            "Send only the fields you want to change. Same rules as sign-up. `email`, `id` "
+            "and `date_joined` can't be changed. The photo has its own endpoint "
+            "(`/api/auth/me/avatar/`) and so does the password (`/api/auth/me/password/`)."
         ),
         tags=["auth"],
         examples=[
@@ -341,6 +351,115 @@ class MeView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+
+class MeAvatarView(generics.GenericAPIView):
+    """PUT / DELETE /api/auth/me/avatar/: set or remove your profile photo."""
+
+    serializer_class = AvatarUploadSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def profile(self, user) -> Response:
+        return Response(MeSerializer(user, context=self.get_serializer_context()).data)
+
+    @extend_schema(
+        summary="Upload a profile photo",
+        description=(
+            "Send the photo as `multipart/form-data` in a field called `avatar`. JPG, PNG or "
+            "WebP, at most 2 MB. It is checked to be a real image, shrunk to 512 x 512 px and "
+            "saved as WebP **without its hidden data** (e.g. the GPS location phones add). "
+            "Replaces your old photo. Returns your updated profile."
+        ),
+        tags=["auth"],
+        request={"multipart/form-data": AvatarUploadSerializer},
+        responses={
+            200: MeSerializer,
+            400: error_response(
+                "Not a usable photo.", {"avatar": ["The photo is too big. Choose one under 2 MB."]}
+            ),
+            401: NOT_LOGGED_IN,
+        },
+    )
+    def put(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        old_photo = user.avatar.name
+        user.avatar.save("avatar.webp", serializer.validated_data["avatar"], save=True)
+        if old_photo:
+            user.avatar.storage.delete(old_photo)  # don't leave the old file behind
+        return self.profile(user)
+
+    @extend_schema(
+        summary="Remove your profile photo",
+        description="Deletes the photo file. The app shows your initials instead.",
+        tags=["auth"],
+        request=None,
+        responses={200: MeSerializer, 401: NOT_LOGGED_IN},
+    )
+    def delete(self, request):
+        user = request.user
+        if user.avatar:
+            user.avatar.delete(save=True)
+        return self.profile(user)
+
+
+class ChangePasswordView(generics.GenericAPIView):
+    """POST /api/auth/me/password/: change your password while logged in."""
+
+    serializer_class = ChangePasswordSerializer
+    # At most 10 tries per hour, so a stolen login can't guess the current password.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_change"
+
+    @extend_schema(
+        summary="Change your password",
+        description=(
+            "Needs your `current_password`, plus the new password twice (same rules as "
+            "sign-up). For safety, **every other login is ended**: their refresh tokens are "
+            "blocked, so other devices are logged out within 15 minutes. This device gets "
+            "new `access` and `refresh` tokens to keep using. Limited to 10 tries per hour."
+        ),
+        tags=["auth"],
+        examples=[
+            OpenApiExample(
+                "Change password",
+                request_only=True,
+                value={
+                    "current_password": "old-Strong-pass-1",
+                    "new_password": "new-Strong-pass-2",
+                    "new_password_confirm": "new-Strong-pass-2",
+                    "remember_me": False,
+                },
+            ),
+            OpenApiExample(
+                "Changed",
+                response_only=True,
+                status_codes=["200"],
+                value={"access": TOKEN_EXAMPLE, "refresh": TOKEN_EXAMPLE},
+            ),
+        ],
+        responses={
+            200: ChangePasswordSerializer,
+            400: error_response(
+                "Wrong current password or the new one isn't allowed.",
+                {"current_password": ["Your current password is incorrect."]},
+            ),
+            401: NOT_LOGGED_IN,
+        },
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+
+        # Log out everywhere: block every refresh token this user still has...
+        for token in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=token)
+        # ...then give this device a fresh pair.
+        refresh = refresh_token_for(user, remember_me=serializer.validated_data["remember_me"])
+        return Response({"access": str(refresh.access_token), "refresh": str(refresh)})
 
 
 # --- Password reset ------------------------------------------------------------
