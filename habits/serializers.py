@@ -31,6 +31,7 @@ class HabitSerializer(serializers.ModelSerializer):
             "schedule_type",
             "weekdays",
             "times_per_week",
+            "visibility",
             "archived",
             "created_at",
             "updated_at",

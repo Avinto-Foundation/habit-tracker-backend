@@ -21,6 +21,10 @@ def avatar_upload_path(user: "User", filename: str) -> str:
     return f"avatars/{user.pk}/{uuid.uuid4().hex}.webp"
 
 
+# Words used in URLs like /api/users/<username>/, so nobody can take them as a username.
+RESERVED_USERNAMES = frozenset({"search", "me", "admin", "api"})
+
+
 class User(AbstractUser):
     """App user. People log in with their email; the username is their public @handle."""
 

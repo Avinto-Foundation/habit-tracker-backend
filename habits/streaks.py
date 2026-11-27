@@ -273,3 +273,34 @@ def habit_stats(habit: Habit, month: tuple[int, int] | None = None) -> dict:
             "days": month_calendar(habit, year, month_number, done, start, today),
         }
     return stats
+
+
+# --- What friends see on a profile ------------------------------------------------
+
+
+def shared_habits(owner, habits) -> list[dict]:
+    """Habit cards for `owner`'s profile, as their friends see them.
+
+    `habits` must have `checkins` prefetched (no extra queries per habit). Days are
+    in the *owner's* time zone, because it's their streak. Check-in notes are never
+    included: friends see that a habit was done, not what was written about it.
+    """
+    today = user_today(owner)
+    cards = []
+    for habit in habits:
+        start = local_date(habit.created_at, owner)
+        all_days = {c.date for c in habit.checkins.all()}  # prefetched, no query
+        done = {day for day in all_days if start <= day <= today}
+        current, longest = streaks(habit, done, start, today)
+        weekly = is_weekly(habit)
+        cards.append(
+            {
+                "habit": habit,
+                "current_streak": current,
+                "longest_streak": longest,
+                "streak_unit": "weeks" if weekly else "days",
+                "done_today": today in all_days,
+                "week_progress": week_progress(habit, done, start, today) if weekly else None,
+            }
+        )
+    return cards
