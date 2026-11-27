@@ -169,6 +169,21 @@ Every endpoint is documented with Swagger/OpenAPI, including request body, respo
 
 **Using tokens:** send the access token on every request as `Authorization: Bearer <access>`. Access tokens last 15 minutes; refresh tokens last 1 day (7 days with `remember_me`). Each refresh returns a new refresh token and blocks the old one. In Swagger, click **Authorize** and paste an access token.
 
+### Friends endpoints
+
+| Method | URL | What it does |
+|---|---|---|
+| GET | `/api/users/search/?q=` | Find people by username or name (min 2 characters; never by email). Each result says how you relate: `none`, `request_sent`, `request_received`, `friends` |
+| GET | `/api/friends/requests/` | Your pending requests: `incoming` and `outgoing` |
+| POST | `/api/friends/requests/` | Send a request (`{"username": "..."}`); if they already asked you, you become friends at once. Max 20 per hour |
+| POST | `/api/friends/requests/<id>/accept/` | Accept a request sent to you |
+| POST | `/api/friends/requests/<id>/decline/` | Decline a request sent to you (silently deleted) |
+| DELETE | `/api/friends/requests/<id>/` | Cancel a request you sent |
+| GET | `/api/friends/` | Your friends, sorted by name |
+| DELETE | `/api/friends/<id>/` | Unfriend (either person can; silent) |
+
+Other people are only ever shown as a "card": name, @username, photo and bio. Emails are never shown.
+
 ## Testing
 
 Every API endpoint has pytest tests (project guideline).
