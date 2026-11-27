@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     # Local
     "accounts",
     "habits",
+    "friends",
 ]
 
 MIDDLEWARE = [
@@ -133,6 +134,8 @@ REST_FRAMEWORK = {
         "password_reset": "5/hour",
         # Stops someone with a stolen login from guessing the current password.
         "password_change": "10/hour",
+        # Stops anyone from spamming friend requests.
+        "friend_request": "20/hour",
     },
 }
 
