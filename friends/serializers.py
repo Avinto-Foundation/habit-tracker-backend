@@ -3,6 +3,8 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from accounts.serializers import AvatarUrlMixin
+from habits.models import Habit
+from habits.serializers import WeekProgressSerializer
 
 from . import services
 from .models import Friendship
@@ -53,6 +55,73 @@ class SearchResultSerializer(UserCardSerializer):
         """Id of the request or friendship (to accept / cancel / unfriend), or null."""
         row = self._status(user)[1]
         return row.pk if row else None
+
+
+class SharedHabitInfoSerializer(serializers.ModelSerializer):
+    """The habit itself, as friends see it: what it is and how often, nothing more."""
+
+    class Meta:
+        model = Habit
+        fields = [
+            "id",
+            "name",
+            "target",
+            "icon",
+            "color",
+            "schedule_type",
+            "weekdays",
+            "times_per_week",
+        ]
+        read_only_fields = fields
+
+
+class SharedHabitSerializer(serializers.Serializer):
+    """One habit on a friend's profile, with its streak (from habits.streaks.shared_habits)."""
+
+    habit = SharedHabitInfoSerializer()
+    current_streak = serializers.IntegerField()
+    longest_streak = serializers.IntegerField()
+    streak_unit = serializers.ChoiceField(choices=["days", "weeks"])
+    done_today = serializers.BooleanField(help_text="Done today, in the owner's time zone.")
+    week_progress = WeekProgressSerializer(
+        allow_null=True, help_text="Only for 'times per week' habits."
+    )
+
+
+class ProfileSerializer(SearchResultSerializer):
+    """Someone's profile page. Needs `statuses` and `habits` in the context.
+
+    `habits` is null when the viewer isn't allowed to see them (not friends), so the
+    app can tell "not friends" apart from "friends, but nothing shared".
+    """
+
+    date_joined = serializers.DateTimeField(read_only=True)
+    habits = serializers.SerializerMethodField()
+
+    class Meta(SearchResultSerializer.Meta):
+        fields = [*SearchResultSerializer.Meta.fields, "date_joined", "habits"]
+        read_only_fields = fields
+
+    @extend_schema_field(
+        serializers.ChoiceField(
+            choices=[
+                services.SELF,
+                services.NONE,
+                services.REQUEST_SENT,
+                services.REQUEST_RECEIVED,
+                services.FRIENDS,
+            ]
+        )
+    )
+    def get_friendship_status(self, user) -> str:
+        """`self` (your own profile), `none`, `request_sent`, `request_received` or `friends`."""
+        return super().get_friendship_status(user)
+
+    @extend_schema_field(SharedHabitSerializer(many=True, allow_null=True))
+    def get_habits(self, user) -> list | None:
+        """Habits shared with friends, with streaks. Null if you're not friends."""
+        habits = self.context["habits"]
+        return None if habits is None else SharedHabitSerializer(habits, many=True).data
 
 
 class FriendshipSerializer(serializers.ModelSerializer):

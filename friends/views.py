@@ -10,10 +10,14 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
+from habits.models import Habit
+from habits.streaks import shared_habits
+
 from . import services
 from .models import Friendship
 from .serializers import (
     FriendshipSerializer,
+    ProfileSerializer,
     RequestListSerializer,
     SearchResultSerializer,
     SendRequestSerializer,
@@ -74,6 +78,49 @@ class UserSearchView(generics.GenericAPIView):
         statuses = services.statuses_for(request.user, users)
         context = {**self.get_serializer_context(), "statuses": statuses}
         return Response(SearchResultSerializer(users, many=True, context=context).data)
+
+
+# --- Profiles ---------------------------------------------------------------------
+
+
+class UserProfileView(generics.GenericAPIView):
+    """GET /api/users/<username>/: someone's profile, and their habits if you're friends."""
+
+    serializer_class = ProfileSerializer
+
+    @extend_schema(
+        summary="Someone's profile",
+        description=(
+            "Anyone logged in sees the **card** (name, @username, photo, bio, joined date) and "
+            "how you relate (`friendship_status`, `friendship_id`).\n\n"
+            "**Friends** also see `habits`: the person's active habits set to "
+            "`visibility: friends`, with streaks and whether they're done today (in the "
+            "owner's time zone). Check-in notes are never shown. For everyone else `habits` "
+            "is `null`. Habits set to `private` are never shown to anyone else.\n\n"
+            "Your own username gives `friendship_status: self` and shows your profile the "
+            "way friends see it (private habits left out). Usernames aren't case-sensitive."
+        ),
+        tags=["friends"],
+        responses={200: ProfileSerializer, 404: OpenApiResponse(description="No such user.")},
+    )
+    def get(self, request, username):
+        user = get_object_or_404(User, username__iexact=username, is_active=True)
+        statuses = services.statuses_for(request.user, [user])
+        relation = statuses[user.pk][0]
+
+        habits = None
+        if relation in (services.FRIENDS, services.SELF):
+            visible = (
+                Habit.objects.filter(
+                    owner=user, archived=False, visibility=Habit.Visibility.FRIENDS
+                )
+                .prefetch_related("checkins")
+                .order_by("created_at", "id")
+            )
+            habits = shared_habits(user, visible)
+
+        context = {**self.get_serializer_context(), "statuses": statuses, "habits": habits}
+        return Response(ProfileSerializer(user, context=context).data)
 
 
 # --- Requests ---------------------------------------------------------------------

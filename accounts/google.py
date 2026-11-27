@@ -7,6 +7,8 @@ from django.contrib.auth import get_user_model
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
+from .models import RESERVED_USERNAMES
+
 User = get_user_model()
 
 
@@ -33,7 +35,10 @@ def unique_username_from_email(email: str) -> str:
         base = f"user_{base}".rstrip("_")
 
     username, number = base, 2
-    while User.objects.filter(username__iexact=username).exists():
+    while (
+        username.lower() in RESERVED_USERNAMES
+        or User.objects.filter(username__iexact=username).exists()
+    ):
         username = f"{base}{number}"
         number += 1
     return username

@@ -174,6 +174,7 @@ Every endpoint is documented with Swagger/OpenAPI, including request body, respo
 | Method | URL | What it does |
 |---|---|---|
 | GET | `/api/users/search/?q=` | Find people by username or name (min 2 characters; never by email). Each result says how you relate: `none`, `request_sent`, `request_received`, `friends` |
+| GET | `/api/users/<username>/` | Someone's profile: their card and how you relate; **friends** also get `habits` (shared habits with streaks), others get `habits: null` |
 | GET | `/api/friends/requests/` | Your pending requests: `incoming` and `outgoing` |
 | POST | `/api/friends/requests/` | Send a request (`{"username": "..."}`); if they already asked you, you become friends at once. Max 20 per hour |
 | POST | `/api/friends/requests/<id>/accept/` | Accept a request sent to you |
@@ -183,6 +184,8 @@ Every endpoint is documented with Swagger/OpenAPI, including request body, respo
 | DELETE | `/api/friends/<id>/` | Unfriend (either person can; silent) |
 
 Other people are only ever shown as a "card": name, @username, photo and bio. Emails are never shown.
+
+**Habit privacy:** each habit has `visibility`: `friends` (default, friends see it and its streak on your profile) or `private` (only you). Archived habits and check-in notes are never shown to others. The usernames `search`, `admin`, `me` and `api` are reserved because they're words in URLs.
 
 ## Testing
 

@@ -58,6 +58,10 @@ class Habit(models.Model):
         WEEKDAYS = "weekdays", "Specific days"
         TIMES_PER_WEEK = "times_per_week", "Times per week"
 
+    class Visibility(models.TextChoices):
+        FRIENDS = "friends", "Friends can see it"
+        PRIVATE = "private", "Only me"
+
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="habits"
     )
@@ -81,6 +85,12 @@ class Habit(models.Model):
         help_text="For 'times per week': 1 to 7.",
     )
 
+    visibility = models.CharField(
+        max_length=10,
+        choices=Visibility.choices,
+        default=Visibility.FRIENDS,
+        help_text="Who else can see this habit (and its streak) on your profile.",
+    )
     archived = models.BooleanField(
         default=False, help_text="Archived habits are hidden but keep their history."
     )

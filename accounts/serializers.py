@@ -10,7 +10,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from . import avatars, google, password_reset
-from .models import validate_timezone
+from .models import RESERVED_USERNAMES, validate_timezone
 from .tokens import RememberMeRefreshToken, refresh_token_for
 
 User = get_user_model()
@@ -27,7 +27,10 @@ def username_field() -> serializers.RegexField:
 
 
 def check_username_free(value: str, current_user=None) -> str:
-    """Raise an error if someone else already has this username (ignoring upper/lower case)."""
+    """Raise an error if someone else already has this username (ignoring upper/lower case),
+    or if it's a reserved word like "search"."""
+    if value.lower() in RESERVED_USERNAMES:
+        raise serializers.ValidationError("This username isn't available. Try another one.")
     taken = User.objects.filter(username__iexact=value)
     if current_user is not None:
         taken = taken.exclude(pk=current_user.pk)
